@@ -1,1 +1,3 @@
 # Segmentation-Vertebra
+
+location & segmentation
