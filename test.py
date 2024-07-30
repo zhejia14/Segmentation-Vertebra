@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import transforms
-from m_dataset import CustomDataset
 from DC_loss import Dice
 import torch
 import cv2 as cv
