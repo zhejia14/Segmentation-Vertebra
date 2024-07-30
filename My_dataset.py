@@ -47,6 +47,21 @@ class CustomDataset(Dataset):
 
         return (img, mask)
 
+class AugmentedDataset(Dataset):
+    def __init__(self, original_dataset, augment_transform):
+        self.original_dataset = original_dataset
+        self.augment_transform = augment_transform
+    
+    def __len__(self):
+        return len(self.original_dataset)
+    
+    def __getitem__(self, idx):
+        img, mask = self.original_dataset[idx]
+        img, mask = self.augment_transform(img, mask)
+
+        return (img, mask)
+
+
 
 def combine_fold(fold_a_path, fold_b_path, fold_a_num, fold_b_num):
     if not os.path.exists(fold_a_path):
