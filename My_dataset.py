@@ -33,10 +33,8 @@ class CustomDataset(Dataset):
         img_path = self.imgs_path[idx]
         mask_path = self.mask_path[idx]
 
-        img = cv.imread(img_path)
-        img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-
-        mask = cv.imread(mask_path, 0)
+        img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+        mask = cv.imread(mask_path, cv.IMREAD_GRAYSCALE)
 
         if self.transform is not None:
             img = self.transform(img)
