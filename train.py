@@ -1,4 +1,4 @@
-from My_dataset import CustomDataset, combine_fold, AugmentedDataset
+from My_dataset import CustomDataset, AugmentedDataset
 from Unet_model import UNet
 from DC_loss import DiceLoss
 from torch.nn import BCEWithLogitsLoss
@@ -13,15 +13,17 @@ import time
 import os
 import my_DEBUG
 import Augment_Transform
-import wandb
+# import wandb
+
+
 
 
 def train():
-    lr_setting = 0.001
-    batch_size = 1
-    epoch = 5000
+    lr_setting = 0.0001
+    batch_size = 2
+    epoch = 1000
     device = "cuda:0"
-    save_path = "./work_11"
+    save_path = "./work_13"
     model_save_step = 500
     model_save_times = 0
     if not os.path.exists(save_path):
@@ -30,15 +32,16 @@ def train():
     transform = transforms.Compose([transforms.ToPILImage(),
                                     transforms.ToTensor()])
 
-    combine_path = combine_fold("./dataset/f01", "./dataset/f02", 1, 2)
-
-    trainDS = CustomDataset(imgs_path=os.path.join(combine_path, "image"), mask_path=os.path.join(combine_path, "label"), transform=transform)
-    augmented_1 = AugmentedDataset(trainDS,  augment_transform=Augment_Transform.augment_RandomFlip)
+    trainDS_1 = CustomDataset(imgs_path="./dataset/f01/image", mask_path="./dataset/f01/label", transform=transform)
+    trainDS_2 = CustomDataset(imgs_path="./dataset/f02/image", mask_path="./dataset/f02/label", transform=transform)
+    CombineDataset = ConcatDataset([trainDS_1, trainDS_2])
+    augmented_1 = AugmentedDataset(trainDS_1,  augment_transform=Augment_Transform.augment_RandomFlip)
+    
     #augmented_2 = AugmentedDataset(trainDS, augment_transform=Augment_Transform.augment_VerticalFlip)
 
     testDS = CustomDataset(imgs_path="./dataset/f03/image", mask_path="./dataset/f03/label", transform=transform)
 
-    CombineDataset = ConcatDataset([trainDS, augmented_1])
+    CombineDataset = ConcatDataset([CombineDataset, augmented_1])
     #CombineDataset = ConcatDataset([CombineDataset, augmented_2])
     trainLoader = DataLoader(CombineDataset, shuffle=True,
                              batch_size=batch_size, num_workers=0)
@@ -50,8 +53,8 @@ def train():
     lossFunc1 = BCEWithLogitsLoss()
     lossFunc2 = DiceLoss()
     #optimizer = Adam(unet.parameters(), lr=lr_setting)
-    optimizer = SGD(unet.parameters(), lr=lr_setting, momentum=0.9)
-    #scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.01, total_iters=3000)
+    optimizer = SGD(unet.parameters(), lr=lr_setting, momentum=0.99)
+    scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.1, total_iters=30000)
     trainSteps = len(CombineDataset) // batch_size
     testSteps = len(testDS) // batch_size
 
@@ -67,18 +70,19 @@ def train():
         totalTrainLoss = 0
         totalTestLoss = 0
         totalTrainDiceLoss = 0
+        totalTestDiceLoss = 0
        
         for (i, (x, y)) in enumerate(trainLoader):
 
             (x, y) = (x.to(device), y.to(device))
             pred = unet(x)
-            loss = lossFunc1(pred, y) + lossFunc2(pred, y)
+            loss = lossFunc1(pred, y)
             dice_loss = lossFunc2(pred, y)
             
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            #scheduler.step()
+            scheduler.step()
            
             totalTrainLoss += loss
             totalTrainDiceLoss += dice_loss
@@ -90,20 +94,23 @@ def train():
             for (x, y) in testLoader:
                 (x, y) = (x.to(device), y.to(device))
                 pred = unet(x)
-                totalTestLoss += lossFunc2(pred, y)
+                totalTestLoss += lossFunc1(pred, y)
+                totalTestDiceLoss += lossFunc2(pred, y)
         
         avgTrainLoss = totalTrainLoss / trainSteps
         avgTestLoss = totalTestLoss / testSteps
         avgTrainDiceLoss = totalTrainDiceLoss / trainSteps
+        avgTestDiceLoss = totalTestDiceLoss / testSteps
        
         H["train_loss"].append(avgTrainLoss.cpu().detach().numpy())
         H["test_loss"].append(avgTestLoss.cpu().detach().numpy())
         
         print("[INFO] EPOCH: {}/{}".format(e + 1, epoch))
-        print("Train loss: {:.6f}, Train Dice Loss: {:.4f}, Test loss: {:.4f}, lr: {:.4f}".format(avgTrainLoss, avgTrainDiceLoss, avgTestLoss, optimizer.param_groups[0]["lr"]))
-        wandb.log({"Train loss": avgTrainLoss})
-        wandb.log({"Train Dice loss": avgTrainDiceLoss, "Test Dice loss": avgTestLoss})
-        wandb.log({"Epoch": e})
+        print("Train loss: {:.6f}, Train Dice Loss: {:.4f}, Test loss: {:.4f}, Test Dice Loss: {:.4f}, lr: {:.8f}".format(avgTrainLoss, 
+                                                                    avgTrainDiceLoss, avgTestLoss, avgTestDiceLoss, optimizer.param_groups[0]["lr"]))
+        # wandb.log({"Train loss": avgTrainLoss})
+        # wandb.log({"Train Dice loss": avgTrainDiceLoss, "Test Dice loss": avgTestLoss})
+        # wandb.log({"Epoch": e, "lr": optimizer.param_groups[0]["lr"]})
         if e!= 0 and e % model_save_step == 0:
             model_save_times = model_save_times + model_save_step
             torch.save(unet, os.path.join(save_path, str(model_save_times)+"_output.pth"))
@@ -113,7 +120,7 @@ def train():
     endTime = time.time()
     print("[INFO] total time taken to train the model: {:.2f}s".format(
         endTime - startTime))
-    wandb.finish()
+    # wandb.finish()
     plt.style.use("ggplot")
     plt.figure()
     plt.plot(H["train_loss"], label="train_loss")
@@ -128,15 +135,17 @@ def train():
 
 
 def main():
-    wandb.init(
-        config={
-            "learning_rate": 0.001,
-            "batch_size": 1,
-            "optimizer": "SGD",
-            "epochs": 5000,
-            "Augmented_Describe": "RandomFlip"
-        }
-    )
+    # wandb.init(
+    #     project="Unet-Augmented-0730",
+    #     name="Linux_D128_Aug1_Random",
+    #     config={
+    #         "learning_rate": 0.1,
+    #         "batch_size": 1,
+    #         "optimizer": "SGD",
+    #         "epochs": 5000,
+    #         "Augmented_Describe": "Random_Augment"
+    #     }
+    # )
     train()
 
 
