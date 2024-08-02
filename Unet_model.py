@@ -14,17 +14,15 @@ class enBlock(Module):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
-        self.BN1 = BatchNorm2d(outChannels)
         self.relu1 = ReLU()
         self.conv2 = Conv2d(outChannels, outChannels, 3)
-        self.BN2 = BatchNorm2d(outChannels)
         self.relu2 = ReLU()
         self.conv3 = Conv2d(outChannels, outChannels, 3)
         self.pool = MaxPool2d(2)
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.pool(self.conv3(self.relu2(self.BN2(self.conv2(self.relu1(self.BN1(self.conv1(x))))))))
+        return self.pool(self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(x))))))
 
 
 class deBlock(Module):
@@ -32,16 +30,14 @@ class deBlock(Module):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
-        self.BN1 = BatchNorm2d(outChannels)
         self.relu1 = ReLU()
         self.conv2 = Conv2d(outChannels, outChannels, 3)
-        self.BN2 = BatchNorm2d(outChannels)
         self.relu2 = ReLU()
         self.conv3 = Conv2d(outChannels, outChannels, 3)   
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.conv3(self.relu2(self.BN2(self.conv2(self.relu1(self.BN1(self.conv1(x)))))))
+        return self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(x)))))
 
 class Encoder(Module):
     def __init__(self, channels=(1, 16, 32, 64)):
