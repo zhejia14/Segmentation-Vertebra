@@ -10,7 +10,7 @@ class DiceLoss(nn.Module):
         self.mode = mode
 
     def forward(self, inputs, targets, smooth=1):
-        
+        inputs = F.sigmoid(inputs)
         inputs = (inputs > 0.5) * 1.
 
         inputs = inputs.view(-1)
