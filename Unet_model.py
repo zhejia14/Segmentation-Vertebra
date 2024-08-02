@@ -5,30 +5,50 @@ from torch.nn import MaxPool2d
 from torch.nn import Module
 from torch.nn import ModuleList
 from torch.nn import ReLU
+from torch.nn import BatchNorm2d
 from torchvision.transforms import CenterCrop
 from torch.nn import functional as F
 
-
-class Block(Module):
+class enBlock(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
-        self.relu = ReLU()
+        self.BN1 = BatchNorm2d(outChannels)
+        self.relu1 = ReLU()
         self.conv2 = Conv2d(outChannels, outChannels, 3)
+        self.BN2 = BatchNorm2d(outChannels)
+        self.relu2 = ReLU()
+        self.conv3 = Conv2d(outChannels, outChannels, 3)
+        self.pool = MaxPool2d(2)
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.conv2(self.relu(self.conv1(x)))
+        return self.pool(self.conv3(self.relu2(self.BN2(self.conv2(self.relu1(self.BN1(self.conv1(x))))))))
 
+
+class deBlock(Module):
+    def __init__(self, inChannels, outChannels):
+        super().__init__()
+        # store the convolution and RELU layers
+        self.conv1 = Conv2d(inChannels, outChannels, 3)
+        self.BN1 = BatchNorm2d(outChannels)
+        self.relu1 = ReLU()
+        self.conv2 = Conv2d(outChannels, outChannels, 3)
+        self.BN2 = BatchNorm2d(outChannels)
+        self.relu2 = ReLU()
+        self.conv3 = Conv2d(outChannels, outChannels, 3)   
+
+    def forward(self, x):
+        # apply CONV => RELU => CONV block to the inputs and return it
+        return self.conv3(self.relu2(self.BN2(self.conv2(self.relu1(self.BN1(self.conv1(x)))))))
 
 class Encoder(Module):
-    def __init__(self, channels=(3, 16, 32, 64)):
+    def __init__(self, channels=(1, 16, 32, 64)):
         super().__init__()
         # store the encoder blocks and maxpooling layer
         self.encBlocks = ModuleList(
-            [Block(channels[i], channels[i + 1])for i in range(len(channels) - 1)])
-        self.pool = MaxPool2d(2)
+            [enBlock(channels[i], channels[i + 1])for i in range(len(channels) - 1)])
 
     def forward(self, x):
         # initialize an empty list to store the intermediate outputs
@@ -39,7 +59,6 @@ class Encoder(Module):
             # the outputs, and then apply maxpooling on the output
             x = block(x)
             blockOutputs.append(x)
-            x = self.pool(x)
             # return the list containing the intermediate outputs
         return blockOutputs
 
@@ -54,7 +73,7 @@ class Decoder(Module):
             [ConvTranspose2d(channels[i], channels[i + 1], 2, 2)
              for i in range(len(channels) - 1)])
         self.dec_blocks = ModuleList(
-            [Block(channels[i], channels[i + 1])
+            [deBlock(channels[i], channels[i + 1])
              for i in range(len(channels) - 1)])
 
     def forward(self, x, encFeatures):
@@ -79,10 +98,10 @@ class Decoder(Module):
         encFeatures = CenterCrop([H, W])(encFeatures)
         # return the cropped features
         return encFeatures
-
-
+    
+    
 class UNet(Module):
-    def __init__(self, encChannels=(3, 16, 32, 64),
+    def __init__(self, encChannels=(1, 16, 32, 64),
                  decChannels=(64, 32, 16),
                  nbClasses=1, retainDim=True,
                  outSize=(1200, 500)):
