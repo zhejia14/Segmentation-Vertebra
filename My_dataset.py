@@ -1,5 +1,4 @@
 from torch.utils.data import Dataset
-from pycocotools.coco import COCO
 import os
 import cv2 as cv
 import shutil
