@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import transforms
-from DC_loss import Dice
+from My_dataset import CustomDataset
+from DC_loss import DiceScore
 import torch
+import torch.nn.functional as F
 import cv2 as cv
 import os
 
@@ -10,8 +12,8 @@ device = "cuda:0"
 threshold = 0.5
 imgs_path = "./dataset/f03/image"
 mask_path = "./dataset/f03/label"
-model_path = "./work_9/output.pth"
-save_path = "./work_9"
+model_path = "./work_12/final_output.pth"
+save_path = "./work_12"
 
 
 def prepare_plot(origImage, origMask, predMask, filename):
@@ -35,37 +37,32 @@ def make_predictions(model, imagePath, maskPath=mask_path):
     model.eval()
     # turn off gradient tracking
     with torch.no_grad():
-        # load the image from disk, swap its color channels, cast it
-        # to float data type, and scale its pixel values
+        
         image = cv.imread(imagePath, cv.IMREAD_GRAYSCALE)
-        orig = image.copy()
-        # find the filename and generate the path to ground truth
-        # mask
+        ori_img = image.copy()
         filename = imagePath.split(os.path.sep)[-1]
         groundTruthPath = os.path.join(maskPath, filename)
         gtMask = cv.imread(groundTruthPath, cv.IMREAD_GRAYSCALE)
+        ori_gt = gtMask.copy()
 
-    # make the channel axis to be the leading one, add a batch
-        # dimension, create a PyTorch tensor, and flash it to the
-        # current device
         transform = transforms.Compose([transforms.ToPILImage(),
                                     transforms.ToTensor()])
-        #image = np.transpose(image, (2, 0, 1))
         image = transform(image)
+        gtMask = transform(gtMask)
         image = image.unsqueeze(dim=0)
         image = image.to(device)
-        # make the prediction, pass the results through the sigmoid
-        # function, and convert the result to a NumPy array
+        gtMask = gtMask.to(device)
         predMask = model(image)
         predMask = torch.squeeze(predMask)
-        predMask = torch.sigmoid(predMask)
+        predMask = F.sigmoid(predMask)
+        diceScore = DiceScore()
+        acc = diceScore(predMask, gtMask)
+
         predMask = predMask.cpu().numpy()
-        # filter out the weak predictions and convert them to integers
         predMask = (predMask > threshold) * 255
         predMask = predMask.astype(np.uint8)
-        acc = Dice(predMask, gtMask)
-        # prepare a plot for visualization
-        prepare_plot(orig, gtMask, predMask, filename)
+
+        prepare_plot(ori_img, ori_gt, predMask, filename)
         return acc
 
 
