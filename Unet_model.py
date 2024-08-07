@@ -16,13 +16,11 @@ class enBlock(Module):
         self.conv1 = Conv2d(inChannels, outChannels, 3)
         self.relu1 = ReLU()
         self.conv2 = Conv2d(outChannels, outChannels, 3)
-        self.relu2 = ReLU()
-        self.conv3 = Conv2d(outChannels, outChannels, 3)
         self.pool = MaxPool2d(2)
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.pool(self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(x))))))
+        return self.pool(self.conv2(self.relu1(self.conv1(x))))
 
 
 class deBlock(Module):
@@ -31,13 +29,12 @@ class deBlock(Module):
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
         self.relu1 = ReLU()
-        self.conv2 = Conv2d(outChannels, outChannels, 3)
-        self.relu2 = ReLU()
-        self.conv3 = Conv2d(outChannels, outChannels, 3)   
+        self.conv2 = Conv2d(outChannels, outChannels, 3) 
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.conv3(self.relu2(self.conv2(self.relu1(self.conv1(x)))))
+        return self.conv2(self.relu1(self.conv1(x)))
+
 
 class Encoder(Module):
     def __init__(self, channels=(1, 16, 32, 64)):
@@ -98,12 +95,17 @@ class Decoder(Module):
     
 class UNet(Module):
     def __init__(self, encChannels=(1, 16, 32, 64),
+                 Bridge=128,
                  decChannels=(64, 32, 16),
                  nbClasses=1, retainDim=True,
                  outSize=(1200, 500)):
         super().__init__()
         # initialize the encoder and decoder
         self.encoder = Encoder(encChannels)
+        self.conv1 = Conv2d(encChannels[-1], Bridge, 3)
+        self.relu = ReLU()
+        self.conv2 = Conv2d(Bridge, Bridge, 3)
+        self.upconv = ConvTranspose2d(Bridge, decChannels[0], 2, 2)
         self.decoder = Decoder(decChannels)
         # initialize the regression head and store the class variables
         self.head = Conv2d(decChannels[-1], nbClasses, 1)
@@ -113,8 +115,7 @@ class UNet(Module):
     def forward(self, x):
         # grab the features from the encoder
         encFeatures = self.encoder(x)
-        # pass the encoder features through decoder making sure that
-        # their dimensions are suited for concatenation
+        encFeatures = self.upconv(self.conv2(self.relu(self.conv1(encFeatures))))
         decFeatures = self.decoder(encFeatures[::-1][0],
                                    encFeatures[::-1][1:])
         # pass the decoder features through the regression head to
