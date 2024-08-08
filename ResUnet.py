@@ -3,68 +3,66 @@ from torch.nn import ConvTranspose2d
 from torch.nn import Conv2d
 from torch.nn import Module
 from torch.nn import ModuleList
+from torch.nn import MaxPool2d
 from torch.nn import ReLU
 from torch.nn import BatchNorm2d
+from torch.nn import Sequential
 from torchvision.transforms import CenterCrop
 from torch.nn import functional as F
 
-class _enBlock(Module):
-    def __init__(self, inChannels, outChannels):
+
+class DoubleConv(Module):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.conv1 = Conv2d(inChannels, outChannels, 3, padding=1)
-        self.BN1 = BatchNorm2d(outChannels)
-        self.relu = ReLU()
-        self.conv2 = Conv2d(outChannels, outChannels, 3, padding=1)
+        self.double_conv = Sequential(
+            Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            BatchNorm2d(out_channels),
+            ReLU(),
+            Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            BatchNorm2d(out_channels),
+            ReLU()
+        )
 
     def forward(self, x):
-        return x + self.conv2(self.relu(self.BN1(self.conv1(x))))    
+        return self.double_conv(x)
 
 
 class enBlock(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
-        
-        self.BN1 = BatchNorm2d(inChannels)
-        self.relu1 = ReLU()
-        self.conv1 = Conv2d(inChannels, outChannels, 3, stride=2, padding=1)
-        self.BN2 = BatchNorm2d(outChannels)
-        self.relu2 = ReLU()
-        self.conv2 = Conv2d(outChannels, outChannels, 3, padding=1)
-        self.downsample = Conv2d(inChannels, outChannels, kernel_size=1, stride=2)
+        self.double_conv = DoubleConv(inChannels, outChannels)
+        self.downsample = Conv2d(inChannels, outChannels, kernel_size=1, stride=1)
+        self.pool = MaxPool2d(2)
 
     def forward(self, x):
         identity = self.downsample(x)
-        return identity + self.conv2(self.relu2(self.BN2(self.conv1(self.relu1(self.BN1(x))))))
+        conv_out = self.double_conv(x)
+        pool = self.pool(identity + conv_out)
+        return pool
 
 
 class deBlock(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
-        self.BN1 = BatchNorm2d(inChannels)
-        self.relu1 = ReLU()
-        self.conv1 = Conv2d(inChannels, outChannels, 3, padding=1)
-        self.BN2 = BatchNorm2d(outChannels)
-        self.relu2 = ReLU()
-        self.conv2 = Conv2d(outChannels, outChannels, 3, padding=1)
+        self.double_conv = DoubleConv(inChannels, outChannels)
         self.upsample = ConvTranspose2d(inChannels, outChannels, kernel_size=1, stride=1)
         
     def forward(self, x):
         identity = self.upsample(x)
-        return identity + self.conv2(self.relu2(self.BN2(self.conv1(self.relu1(self.BN1(x))))))
+        conv_out = self.double_conv(x)
+        return identity + conv_out
 
 
 class Encoder(Module):
-    def __init__(self, channels=(1, 64, 128, 256)):
+    def __init__(self, channels=(1, 32, 64, 128)):
         super().__init__()
         # store the encoder blocks and maxpooling layer
-        self.encBlock_0 = _enBlock(channels[0], channels[1])
         self.encBlocks = ModuleList(
-            [enBlock(channels[i], channels[i + 1])for i in range(1, len(channels) - 1)])
+            [enBlock(channels[i], channels[i + 1])for i in range(len(channels) - 1)])
 
     def forward(self, x):
         # initialize an empty list to store the intermediate outputs
         blockOutputs = []
-        x = self.encBlock_0(x)
         blockOutputs.append(x)
         for block in self.encBlocks:
             # pass the inputs through the current encoder block, store
@@ -76,7 +74,7 @@ class Encoder(Module):
 
 
 class Decoder(Module):
-    def __init__(self, channels=(256, 128, 64)):
+    def __init__(self, channels=(128, 64, 32)):
         super().__init__()
         # initialize the number of channels, upsampler blocks, and
         # decoder blocks
@@ -113,9 +111,9 @@ class Decoder(Module):
 
 
 class Res_UNet(Module):
-    def __init__(self, encChannels=(1, 16, 32, 64),
-                 decChannels=(64, 32, 16),
-                 nbClasses=1, retainDim=False,
+    def __init__(self, encChannels=(1, 32, 64, 128),
+                 decChannels=(128, 64, 32),
+                 nbClasses=1, retainDim=True,
                  outSize=(1200, 500)):
         super().__init__()
         # initialize the encoder and decoder
@@ -144,60 +142,3 @@ class Res_UNet(Module):
         return F.sigmoid(map)
 
 
-# Res_UNet(
-#   (encoder): Encoder(
-#     (encBlock_0): _enBlock(
-#       (conv1): Conv2d(1, 16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#       (BN1): BatchNorm2d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#       (relu): ReLU()
-#       (conv2): Conv2d(16, 16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#     )
-#     (encBlocks): ModuleList(
-#       (0): enBlock(
-#         (BN1): BatchNorm2d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu1): ReLU()
-#         (conv1): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
-#         (BN2): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu2): ReLU()
-#         (conv2): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (downsample): Conv2d(16, 32, kernel_size=(1, 1), stride=(2, 2))
-#       )
-#       (1): enBlock(
-#         (BN1): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu1): ReLU()
-#         (conv1): Conv2d(32, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
-#         (BN2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu2): ReLU()
-#         (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (downsample): Conv2d(32, 64, kernel_size=(1, 1), stride=(2, 2))
-#       )
-#     )
-#   )
-#   (decoder): Decoder(
-#     (upconvs): ModuleList(
-#       (0): ConvTranspose2d(64, 32, kernel_size=(2, 2), stride=(2, 2))
-#       (1): ConvTranspose2d(32, 16, kernel_size=(2, 2), stride=(2, 2))
-#     )
-#     (dec_blocks): ModuleList(
-#       (0): deBlock(
-#         (BN1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu1): ReLU()
-#         (conv1): Conv2d(64, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (BN2): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu2): ReLU()
-#         (conv2): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (upsample): ConvTranspose2d(64, 32, kernel_size=(1, 1), stride=(1, 1))
-#       )
-#       (1): deBlock(
-#         (BN1): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu1): ReLU()
-#         (conv1): Conv2d(32, 16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (BN2): BatchNorm2d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-#         (relu2): ReLU()
-#         (conv2): Conv2d(16, 16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-#         (upsample): ConvTranspose2d(32, 16, kernel_size=(1, 1), stride=(1, 1))
-#       )
-#     )
-#   )
-#   (head): Conv2d(16, 1, kernel_size=(1, 1), stride=(1, 1))
-# )
