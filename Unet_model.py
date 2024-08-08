@@ -6,6 +6,7 @@ from torch.nn import Module
 from torch.nn import ModuleList
 from torch.nn import ReLU
 from torch.nn import BatchNorm2d
+from torch.nn import Upsample
 from torchvision.transforms import CenterCrop
 from torch.nn import functional as F
 
@@ -14,27 +15,32 @@ class enBlock(Module):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
-        self.relu1 = ReLU()
+        self.BN1 = BatchNorm2d(outChannels)
         self.conv2 = Conv2d(outChannels, outChannels, 3)
+        self.BN2 = BatchNorm2d(outChannels)
+        self.relu1 = ReLU()
         self.pool = MaxPool2d(2)
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.pool(self.conv2(self.relu1(self.conv1(x))))
+        return self.pool(self.relu1(self.BN2(self.conv2(self.BN1(self.conv1(x))))))
 
 class Bridge(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
+        self.BN1 = BatchNorm2d(outChannels)
         self.relu1 = ReLU()
         self.conv2 = Conv2d(outChannels, outChannels, 3)
+        self.BN2 = BatchNorm2d(outChannels)
         self.relu2 = ReLU()
         self.upconv = ConvTranspose2d(outChannels, inChannels, 2, 2)
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.upconv(self.relu2(self.conv2(self.relu1(self.conv1(x)))))
+        x = self.relu2(self.BN2(self.conv2(self.relu1(self.BN1(self.conv1(x))))))
+        return self.upconv(x)
 
 
 class deBlock(Module):
@@ -42,12 +48,14 @@ class deBlock(Module):
         super().__init__()
         # store the convolution and RELU layers
         self.conv1 = Conv2d(inChannels, outChannels, 3)
-        self.relu1 = ReLU()
+        self.BN1 = BatchNorm2d(outChannels)
         self.conv2 = Conv2d(outChannels, outChannels, 3) 
+        self.BN2 = BatchNorm2d(outChannels)
+        self.relu1 = ReLU()
 
     def forward(self, x):
         # apply CONV => RELU => CONV block to the inputs and return it
-        return self.conv2(self.relu1(self.conv1(x)))
+        return self.relu1(self.BN2(self.conv2(self.BN1(self.conv1(x)))))
 
 
 class Encoder(Module):
@@ -68,7 +76,7 @@ class Encoder(Module):
             x = block(x)
             blockOutputs.append(x)
             # return the list containing the intermediate outputs
-        x = self.Bridge(x)
+        blockOutputs[-1] = self.Bridge(x)
         return blockOutputs
 
 
@@ -110,8 +118,8 @@ class Decoder(Module):
     
     
 class UNet(Module):
-    def __init__(self, encChannels=(1, 16, 32, 64),
-                 decChannels=(64, 32, 16),
+    def __init__(self, encChannels=(1, 32, 64, 128),
+                 decChannels=(128, 64, 32),
                  nbClasses=1, retainDim=True,
                  outSize=(1200, 500)):
         super().__init__()
