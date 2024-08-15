@@ -58,19 +58,15 @@ def find_cls(image, H, W, Down_pixel, Detect_Width, main_point, follow_point):
     return x_smooth, y_smooth, cls_points
 
 
-def make_region_mask(image, x_smooth, y_smooth, range_extend=50):
-    # 创建一个与原图像相同大小的黑色掩膜
+def make_roi_mask(image, x_smooth, y_smooth, range_extend=50):
     h, w = image.shape
     mask = np.zeros(image.shape, dtype=np.uint8)
     
-    # 遍历 CLS 曲线上的每一个点
     for i in range(len(x_smooth) - 1):
         x1, y1 = int(x_smooth[i]), int(y_smooth[i])
         x2, y2 = int(x_smooth[i + 1]), int(y_smooth[i + 1])
 
-        # 确保 x 和 y 不超出图像边界
         if 0 <= y1 < h and 0 <= y2 < h:
-            # 计算线段之间的斜率
             if x1 != x2:
                 slope = (y2 - y1) / (x2 - x1)
                 for x in range(min(x1, x2), max(x1, x2) + 1):
@@ -99,7 +95,7 @@ def main()
     main_point = 6  # Number of reference points
     follow_point = 4
     x_smooth, y_smooth, cls_points = find_cls(image, H, W, Down_pixel, Detect_Width, main_point, follow_point)
-    mask = make_region_mask(image, x_smooth, y_smooth, 70)
+    mask = make_roi_mask(image, x_smooth, y_smooth, 70)
     masked_image = np.where(mask == 255, image, 0)
     # Plotting the results
     plt.imshow(image, cmap='gray')
