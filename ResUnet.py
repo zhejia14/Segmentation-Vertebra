@@ -41,6 +41,22 @@ class enBlock(Module):
         return pool
 
 
+class Bridge(Module):
+    def __init__(self, inChannels):
+        super().__init__()
+        self.double_conv1 = DoubleConv(inChannels, inChannels * 2)
+        self.downsample = Conv2d(inChannels, inChannels * 2, kernel_size=1, stride=1)
+        self.double_conv2 = DoubleConv(inChannels * 2, inChannels)
+        self.upsample = ConvTranspose2d(inChannels * 2, inChannels, kernel_size=1, stride=1)
+
+    def forward(self, x):
+        identity = self.downsample(x)
+        conv_out1 = self.double_conv1(x)
+        conv_out2 = self.double_conv2(identity + conv_out1)
+        identity = self.upsample(conv_out1)
+        return identity + conv_out2
+
+
 class deBlock(Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
@@ -111,22 +127,25 @@ class Decoder(Module):
 
 
 class Res_UNet(Module):
-    def __init__(self, encChannels=(1, 32, 64, 128),
-                 decChannels=(128, 64, 32),
+    def __init__(self, encChannels=(1, 64, 128, 256, 512),
+                 decChannels=(512, 256, 128, 64),
                  nbClasses=1, retainDim=True,
                  outSize=(1200, 500)):
         super().__init__()
         # initialize the encoder and decoder
         self.encoder = Encoder(encChannels)
+        self.bridge = Bridge(decChannels[0])
         self.decoder = Decoder(decChannels)
         # initialize the regression head and store the class variables
         self.head = Conv2d(decChannels[-1], nbClasses, 1)
         self.retainDim = retainDim
         self.outSize = outSize
+        
 
     def forward(self, x):
         # grab the features from the encoder
         encFeatures = self.encoder(x)
+        encFeatures[-1] = self.bridge(encFeatures[-1])
         # pass the encoder features through decoder making sure that
         # their dimensions are suited for concatenation
         decFeatures = self.decoder(encFeatures[::-1][0],
@@ -137,8 +156,6 @@ class Res_UNet(Module):
         # check to see if we are retaining the original output
         # dimensions and if so, then resize the output to match them
         if self.retainDim:
-            map = F.interpolate(map, self.outSize)
+            map = F.interpolate(map, self.outSize, mode='nearest')
         # return the segmentation map
-        return F.sigmoid(map)
-
-
+        return torch.sigmoid(map)
